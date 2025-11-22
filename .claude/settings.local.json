@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(cat:*)",
+      "Bash(jupyter nbconvert:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:mindnlp.cqu.ai)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
