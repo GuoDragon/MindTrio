@@ -8,7 +8,7 @@
 ## 技术方案
 本项目基于CDTB数据集，采用MindSpore框架微调DeepSeek-R1-Distill-Qwen-1.5B大模型，实现了中文篇章级句间关系识别任务。
 
-## 技术栈与核心组件
+### 技术栈与核心组件
 | 技术栈           | 版本/说明                         |
 | ---------------- | --------------------------------- |
 | 深度学习框架     | MindSpore                         |
@@ -17,62 +17,102 @@
 | 参数高效微调方法 | LoRA (Low-Rank Adaptation)        |
 | 数据集           | CDTB (Chinese Discourse TreeBank) |
 
-## 核心技术实现细节
+### 核心技术实现细节
 
-### 数据处理流程
+#### 数据处理流程
 ```python
-# 数据加载
-df_train = pd.read_json(train_path)
-ds_train = Dataset.from_pandas(df_train)
+# 数据路径
+train_path = "/home/ma-user/work/data/train.json"
+val_path = "/home/ma-user/work/data/val.json"
 
-# 对话模板构建
+# 读取数据
+df_train = pd.read_json(train_path)
+df_val = pd.read_json(val_path)
+
+# 转换为Dataset格式
+ds_train = Dataset.from_pandas(df_train)
+ds_val = Dataset.from_pandas(df_val)
+
+# 最大序列长度
+MAX_LENGTH = 1024
+
 def process_func(example):
+    # 构建指令部分
     instruction = tokenizer(
-        f"<|im_start|>system\n你是PDTB文本关系分析助手<|im_end|>\n"
-        f"<|im_start|>user\n{example['content']}<|im_end|>\n"
+        f"<|im_start|>system\n你是一位PDTB中文文本关系分析助手<|im_end|>\n"
+        f"<|im_start|>user\n{example.get('content', '')}<|im_end|>\n"
         f"<|im_start|>assistant\n",
         add_special_tokens=False
     )
-    response = tokenizer(f"{example['summary']}", add_special_tokens=False)
 
-    # 输入序列构建与截断
+    # 构建回答部分
+    response = tokenizer(
+        f"{example.get('summary', '')}", 
+        add_special_tokens=False
+    )
+
+    # 拼接 input_ids 和 attention_mask
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
+    attention_mask = instruction["attention_mask"] + response["attention_mask"] + [1]
+
+    # 构建 labels：指令部分设为 -100（不计算损失），只对回答部分计算损失
+    labels = [-100] * len(instruction["input_ids"]) + response["input_ids"] + [tokenizer.pad_token_id]
+
+    # 截断到最大长度
     input_ids = input_ids[:MAX_LENGTH]
+    attention_mask = attention_mask[:MAX_LENGTH]
+    labels = labels[:MAX_LENGTH]
 
-    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
-
-# 数据编码
-tokenized_train = ds_train.map(process_func, remove_columns=ds_train.column_names)
+    return {
+        "input_ids": input_ids, 
+        "attention_mask": attention_mask, 
+        "labels": labels
+    }
 ```
 
-### LoRA微调配置
+#### LoRA微调配置
 ```python
+# 配置LoRA
 lora_config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    r=8,                    # LoRA秩
+    task_type=TaskType.CAUSAL_LM,  # 因果语言模型
+    target_modules=[        # 要应用LoRA的模块（注意力层和FFN层）
+        "q_proj", "k_proj", "v_proj", "o_proj",   # 注意力层
+        "gate_proj", "up_proj", "down_proj"       # FFN层
+    ],
+    r=16,                   # LoRA秩
     lora_alpha=32,          # LoRA缩放因子
-    lora_dropout=0.1,       # dropout率
+    lora_dropout=0.05,      # Dropout率
     inference_mode=False    # 训练模式
 )
+
+# 应用LoRA到模型
 model = get_peft_model(model, lora_config)
-model.print_trainable_parameters()  # 输出可训练参数比例
 ```
 
-### 模型训练与合并
+#### 模型训练与合并
 ```python
 # 训练配置
 args = TrainingArguments(
-    output_dir="./output",
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=5,
-    num_train_epochs=3,
-    learning_rate=3e-5,
-    save_steps=100
+    output_dir="./output",                    # 输出目录
+    per_device_train_batch_size=4,            # batch size
+    gradient_accumulation_steps=5,            # 梯度累积步数
+    logging_steps=10,                         # 日志记录间隔
+    num_train_epochs=3,                       # 训练轮数
+    save_steps=100,                           # checkpoint保存间隔
+    learning_rate=3e-5,                       # 学习率
+    save_on_each_node=True,                   # 在每个节点上保存
 )
 
 # 训练执行
-trainer = Trainer(model=model, args=args, ...)
+# 创建Trainer
+trainer = Trainer(
+    model=model,
+    args=args,
+    train_dataset=tokenized_train,
+    data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
+)
+
+# 开始训练
 trainer.train()
 
 # LoRA权重合并
@@ -126,15 +166,17 @@ model.save_pretrained(merged_path)
 ## 项目使用
 本项目在华为云上实现
 ### 环境搭建
-1. **安装MindSpore**
+1. 本项目使用虚拟环境`python3 -m venv lcl`安装相应环境，也可以直接使用全局环境
+2. 通过`source /home/ma-user/work/lcl/bin/activate`激活虚拟环境
+3. **安装MindNLP**
    ```bash
-   pip install mindspore
+   pip install mindnlp==0.5.1
    ```
-
-2. **安装依赖库**
-   ```bash
-   pip install mindnlp datasets transformers peft
-   ```
+4. 安装 4.5.1 版本的 MinsNLP，会自动安装所需的其他依赖库，如 MindSpore、Transformers 等
+5. 下载 ipykernel `pip install ipykernel`，用于在 Jupyter Notebook 中运行 Python 代码
+6. 注册当前虚拟环境的 Jupyter 内核 `python -m ipykernel install --user --name lcl --display-name "Python (lcl)"`
+7. 在 Jupyter Notebook 中选择 `Kernel -> Change kernel -> Python (lcl)` 即可切换到当前虚拟环境
+8. 注意每次重启 Notebook 后，都需要重新执行步骤 6, 7
 
 ### 数据准备
 1. 准备 CDTB 格式的 JSON 数据集文件
@@ -154,8 +196,3 @@ model.save_pretrained(merged_path)
 
 ### LoRA权重合并
 使用`merge.ipynb`合并LoRA权重与基础模型
-
-## 模型性能与评估
-- 训练集损失：0.9027（3个epoch）
-- 可训练参数比例：0.5168%（仅微调900万参数）
-- 训练时间：约1.6小时（3个epoch）
