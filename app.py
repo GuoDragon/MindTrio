@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, jsonify
-import webview
 import mysql.connector
 from datetime import datetime
 import json
@@ -23,7 +22,7 @@ DB_CONFIG = {
 
 # 本地模型配置
 # TODO: 模型下载后将路径替换为实际本地路径
-MODEL_ID = "D:\hw\MindSpore_CCNU_MindTrio\checkpoint-1380"
+MODEL_ID = r"D:\hw\merge\merged_model"
 
 # Few-shot 示例
 FEW_SHOT_EXAMPLES = """
@@ -49,8 +48,7 @@ try:
     PIPE = pipeline(
         "text-generation",
         model=MODEL_ID,
-        torch_dtype=torch.float16,
-        device='auto'  # 自动选择设备
+        dtype=torch.float16
     )
     print("模型加载完成。")
 except Exception as e:
@@ -126,6 +124,13 @@ def parse_dialogue(text):
         seg = m.group(0).strip()
         if seg:
             segments.append(seg)
+
+    # 没有 T/S 标记时，按段落切分（实现第4条功能）
+    if not segments:
+        # 按换行符划分段落
+        paragraphs = text.split('\n')
+        # 过滤空段落并保留有内容的
+        segments = [p.strip() for p in paragraphs if p.strip()]
 
     # 返回上一段话的最后一个句子
     def get_last_sentence(paragraph):

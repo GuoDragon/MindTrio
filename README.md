@@ -3,7 +3,7 @@
 ## 项目背景和简介
 在传统课堂话语分析体系中，使用特征工程的方法虽然效果不错，但需要耗费大量的人力物力；另一种使用 Transformer 等经典深度学习的方法虽然非常高效，但是典型的“黑盒”模型，可解释性弱，而在实际课堂分析中，教师往往看重可解释性。因此，本项目实现了：
 - 通过使用微调大模型，在保证性能的同时，兼顾可解释性
-- 编写相应的封装代码，实现端到端的程序调用
+- 提供相应的封装代码，实现端到端的程序调用
 
 ## 技术方案
 本项目基于CDTB数据集，采用MindSpore框架微调DeepSeek-R1-Distill-Qwen-1.5B大模型，实现了中文篇章级句间关系识别任务。
@@ -164,7 +164,7 @@ model.save_pretrained(merged_path)
 
 
 ## 项目使用
-本项目在华为云上实现
+本项目微调部分在华为云上实现，页面部分在本地 Windows 系统上实现
 ### 环境搭建
 1. 本项目使用虚拟环境`python3 -m venv lcl`安装相应环境，也可以直接使用全局环境
 2. 通过`source /home/ma-user/work/lcl/bin/activate`激活虚拟环境
@@ -196,3 +196,29 @@ model.save_pretrained(merged_path)
 
 ### LoRA权重合并
 使用`merge.ipynb`合并LoRA权重与基础模型
+
+### 本地环境搭建
+1. 为便于环境搭建，推荐使用 anaconda 单独创建虚拟环境`conda create -n mindtrio python=3.10`
+2. 安装 GPU 版本 Pytorch `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121` ，或 CPU 版本 `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu`
+3. 安装 `requirements.txt` 中的依赖包 `pip install -r requirements.txt`
+
+### 使用脚本
+1. 提前将微调合并后的模型下载下来，并将 `app.py` 中第 25 行的 `MODEL_ID` 变量修改为实际模型路径
+2. 在虚拟环境中运行 `python app.py`，预计输出
+    ```bash
+    正在从 YOUR_PATH 加载模型...
+    Device set to use cuda:0
+    模型加载完成。
+    * Serving Flask app 'app'
+    * Debug mode: on
+    WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+    * Running on http://127.0.0.1:5000
+    Press CTRL+C to quit
+    * Restarting with stat
+    正在从 YOUR_PATH 加载模型...
+    Device set to use cuda:0
+    模型加载完成。
+    * Debugger is active!
+    * Debugger PIN: 113-062-594
+    ```
+3. 在浏览器中打开 `http://127.0.0.1:5000` 后，就可以进行系统的使用
