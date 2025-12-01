@@ -290,8 +290,12 @@ def call_model(user_input):
 
     # 处理模型输出
     generated_text = outputs[0]["generated_text"][len(chat_prompt):].strip()
-    cleaned_output = re.sub(r".*?", "", generated_text, flags=re.DOTALL).strip()
-
+    # 截取 之后的内容
+    think_end = generated_text.find("")
+    if think_end != -1:
+        cleaned_output = generated_text[think_end + len(""):].strip()
+    else:
+        cleaned_output = generated_text.strip()
     print(f"模型原始输出:\n{generated_text}")
     print(f"清洗输出:\n{cleaned_output}")
 
